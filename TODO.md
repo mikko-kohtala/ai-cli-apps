@@ -26,12 +26,12 @@ This document tracks the implementation status for each AI CLI tool across diffe
 
 **Documentation**: [Docs](https://code.claude.com/docs)
 
-| Operation     | Status             | Command/Method     |
-| ------------- | ------------------ | ------------------ |
-| Version Check | ✅ Implemented     | `claude --version` |
-| Install       | ❌ Not implemented |                    |
-| Uninstall     | ❌ Not implemented |                    |
-| Upgrade       | ❌ Not implemented |                    |
+| Operation     | Status         | Command/Method                                    |
+| ------------- | -------------- | ------------------------------------------------- |
+| Version Check | ✅ Implemented | `claude --version`                                |
+| Install       | ✅ Implemented | `curl -fsSL https://claude.ai/install.sh \| bash` |
+| Uninstall     | ✅ Implemented | Removes binary, versions, and config (optional)   |
+| Upgrade       | ⚠️ Partial     | Re-install via bootstrap script                   |
 
 ## Codex CLI
 
@@ -103,7 +103,7 @@ This document tracks the implementation status for each AI CLI tool across diffe
 
 1. Research Cursor CLI (`cursor-agent`) - verify version check, install, uninstall, upgrade commands
 2. Research Amp's uninstall process
-3. Research Claude Code install/uninstall/upgrade process
-4. Implement install commands for all tools
+3. ✅ ~~Research Claude Code install/uninstall/upgrade process~~ (Done)
+4. Implement install/uninstall commands for remaining tools
 5. Research upgrade commands for all tools
 6. Implement upgrade functionality in the CLI

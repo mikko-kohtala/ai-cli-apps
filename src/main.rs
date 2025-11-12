@@ -7,7 +7,7 @@ use std::process::Command;
 
 #[derive(Parser)]
 #[command(name = "ai-cli-installer")]
-#[command(about = "Check and manage AI CLI tools versions", long_about = None)]
+#[command(about = "Check and manage AI CLI tools versions", long_about = "Check and manage AI CLI tools versions\n\nSupported tools:\n  Claude Code (claude)\n  Amp (amp)\n  Codex (codex)\n  Cursor (cursor)\n  Copilot CLI (copilot)\n  Kilo (kilo)\n  Gemini (gemini)\n  Cline (cline)")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -33,11 +33,23 @@ enum Commands {
     Uninstall {
         /// Optional tool name to uninstall directly (e.g., 'claude')
         tool: Option<String>,
+        /// Remove config directory (will ask for confirmation unless --force is used)
+        #[arg(long)]
+        remove_config: bool,
+        /// Skip all confirmation prompts
+        #[arg(long)]
+        force: bool,
     },
     /// Uninstall AI CLI tools (alias for uninstall)
     Remove {
         /// Optional tool name to uninstall directly (e.g., 'claude')
         tool: Option<String>,
+        /// Remove config directory (will ask for confirmation unless --force is used)
+        #[arg(long)]
+        remove_config: bool,
+        /// Skip all confirmation prompts
+        #[arg(long)]
+        force: bool,
     },
     /// List installed AI CLI tools (alias for default command)
     List,
@@ -106,11 +118,6 @@ impl ToolVersion {
         self.installed = version;
         self
     }
-
-    fn with_latest(mut self, version: Option<String>) -> Self {
-        self.latest = version;
-        self
-    }
 }
 
 #[derive(Deserialize)]
@@ -142,7 +149,7 @@ fn check_command(cmd: &str, args: &[&str]) -> Option<String> {
 fn get_claude_version() -> ToolVersion {
     let installed = check_command("claude", &["--version"])
         .and_then(|s| s.lines().next().map(|l| l.to_string()));
-    ToolVersion::new("Claude").with_installed(installed)
+    ToolVersion::new("Claude Code").with_installed(installed)
 }
 
 fn get_amp_version() -> ToolVersion {
@@ -239,7 +246,13 @@ fn print_version(tool: &ToolVersion, check_latest: bool) {
                 version_str.green().to_string()
             }
         }
-        None => "not installed".red().to_string(),
+        None => {
+            if check_latest && tool.latest.is_some() {
+                format!("{} ({})", "not installed".red(), tool.latest.as_ref().unwrap().bright_blue())
+            } else {
+                "not installed".red().to_string()
+            }
+        }
     };
 
     println!("{:12} {}", format!("{}:", tool.name).bold(), status);
@@ -263,6 +276,7 @@ async fn check_latest_versions(tools: &mut [ToolVersion]) {
 
     // Fetch latest versions in parallel
     let handles = vec![
+        tokio::spawn(get_github_latest("anthropics/anthropic-quickstarts")),
         tokio::spawn(get_npm_latest("@openai/codex")),
         tokio::spawn(get_npm_latest("@github/copilot")),
         tokio::spawn(get_npm_latest("@google/gemini-cli")),
@@ -275,11 +289,12 @@ async fn check_latest_versions(tools: &mut [ToolVersion]) {
     // Update tools with latest versions
     for tool in tools.iter_mut() {
         tool.latest = match tool.name.as_str() {
-            "Codex" => results[0].as_ref().ok().and_then(|r| r.clone()),
-            "Copilot" => results[1].as_ref().ok().and_then(|r| r.clone()),
-            "Gemini" => results[2].as_ref().ok().and_then(|r| r.clone()),
-            "Cline" => results[3].as_ref().ok().and_then(|r| r.clone()),
-            "Kilo" => results[4].as_ref().ok().and_then(|r| r.clone()),
+            "Claude Code" => results[0].as_ref().ok().and_then(|r| r.clone()),
+            "Codex" => results[1].as_ref().ok().and_then(|r| r.clone()),
+            "Copilot" => results[2].as_ref().ok().and_then(|r| r.clone()),
+            "Gemini" => results[3].as_ref().ok().and_then(|r| r.clone()),
+            "Cline" => results[4].as_ref().ok().and_then(|r| r.clone()),
+            "Kilo" => results[5].as_ref().ok().and_then(|r| r.clone()),
             _ => None,
         };
     }
@@ -288,7 +303,7 @@ async fn check_latest_versions(tools: &mut [ToolVersion]) {
 fn get_all_tools() -> Vec<Tool> {
     vec![
         Tool::new(
-            "Claude",
+            "Claude Code",
             InstallMethod::Bootstrap(
                 "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/bootstrap.sh".to_string()
             ),
@@ -368,8 +383,9 @@ async fn install_tool(tool: &Tool) -> Result<()> {
             }
 
             println!("{} Running installation...", "→".cyan());
+            println!();
 
-            // Execute the bootstrap script
+            // Execute the bootstrap script (inherit stdout/stderr so user sees output)
             let status = Command::new("bash")
                 .arg(&script_path)
                 .status()
@@ -378,10 +394,11 @@ async fn install_tool(tool: &Tool) -> Result<()> {
             // Clean up
             let _ = std::fs::remove_file(&script_path);
 
+            println!();
             if status.success() {
                 println!("{} {} installed successfully!", "✓".green(), tool.name);
             } else {
-                anyhow::bail!("Bootstrap installation failed for {}", tool.name);
+                anyhow::bail!("Installation failed - see output above for details");
             }
         }
         InstallMethod::Npm(package) => {
@@ -481,7 +498,7 @@ async fn install_tool(tool: &Tool) -> Result<()> {
     Ok(())
 }
 
-async fn uninstall_tool(tool: &Tool) -> Result<()> {
+async fn uninstall_tool(tool: &Tool, remove_config: bool, force: bool) -> Result<()> {
     println!("Uninstalling {}...", tool.name.bright_cyan());
 
     match &tool.install_method {
@@ -522,17 +539,26 @@ async fn uninstall_tool(tool: &Tool) -> Result<()> {
 
             if config_path.exists() {
                 println!("{} Config directory found at: {}", "→".cyan(), config_path.display());
-                println!("{} Remove config directory? (contains settings and history) [y/N]", "?".yellow());
+                
+                if remove_config {
+                    let should_remove = if force {
+                        true
+                    } else {
+                        println!("{} Remove config directory? (contains settings and history) [y/N]", "?".yellow());
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input)?;
+                        input.trim().eq_ignore_ascii_case("y")
+                    };
 
-                let mut input = String::new();
-                std::io::stdin().read_line(&mut input)?;
-
-                if input.trim().eq_ignore_ascii_case("y") {
-                    std::fs::remove_dir_all(&config_path)
-                        .context("Failed to remove config directory")?;
-                    removed_items.push(format!("config: {}", config_path.display()));
+                    if should_remove {
+                        std::fs::remove_dir_all(&config_path)
+                            .context("Failed to remove config directory")?;
+                        removed_items.push(format!("config: {}", config_path.display()));
+                    } else {
+                        println!("{} Keeping config directory", "→".cyan());
+                    }
                 } else {
-                    println!("{} Keeping config directory", "→".cyan());
+                    println!("{} Keeping config directory (use --remove-config to remove it)", "→".cyan());
                 }
             }
 
@@ -585,10 +611,19 @@ async fn handle_install_command(tool_name: Option<&str>) -> Result<()> {
 
     // If a specific tool is requested, install it directly
     if let Some(name) = tool_name {
-        let tool = tools.iter().find(|t| t.name.eq_ignore_ascii_case(name))
+        let tool = tools.iter().find(|t| {
+            t.name.eq_ignore_ascii_case(name) || 
+            t.binary_name.as_ref().map(|b| b.eq_ignore_ascii_case(name)).unwrap_or(false)
+        })
             .context(format!("Tool '{}' not found. Available tools: {}",
                 name,
-                tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", ")
+                tools.iter().map(|t| {
+                    if let Some(bin) = &t.binary_name {
+                        format!("{} ({})", t.name, bin)
+                    } else {
+                        t.name.clone()
+                    }
+                }).collect::<Vec<_>>().join(", ")
             ))?;
 
         if tool.is_installed() {
@@ -667,15 +702,24 @@ async fn handle_install_command(tool_name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-async fn handle_uninstall_command(tool_name: Option<&str>) -> Result<()> {
+async fn handle_uninstall_command(tool_name: Option<&str>, remove_config: bool, force: bool) -> Result<()> {
     let tools = get_all_tools();
 
     // If a specific tool is requested, uninstall it directly
     if let Some(name) = tool_name {
-        let tool = tools.iter().find(|t| t.name.eq_ignore_ascii_case(name))
+        let tool = tools.iter().find(|t| {
+            t.name.eq_ignore_ascii_case(name) || 
+            t.binary_name.as_ref().map(|b| b.eq_ignore_ascii_case(name)).unwrap_or(false)
+        })
             .context(format!("Tool '{}' not found. Available tools: {}",
                 name,
-                tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", ")
+                tools.iter().map(|t| {
+                    if let Some(bin) = &t.binary_name {
+                        format!("{} ({})", t.name, bin)
+                    } else {
+                        t.name.clone()
+                    }
+                }).collect::<Vec<_>>().join(", ")
             ))?;
 
         if !tool.is_installed() {
@@ -683,7 +727,7 @@ async fn handle_uninstall_command(tool_name: Option<&str>) -> Result<()> {
             return Ok(());
         }
 
-        uninstall_tool(tool).await?;
+        uninstall_tool(tool, remove_config, force).await?;
         return Ok(());
     }
 
@@ -717,7 +761,7 @@ async fn handle_uninstall_command(tool_name: Option<&str>) -> Result<()> {
 
             for selection in selections {
                 if let Some(tool) = installed_tools.iter().find(|t| t.name == selection) {
-                    if let Err(e) = uninstall_tool(tool).await {
+                    if let Err(e) = uninstall_tool(tool, remove_config, force).await {
                         println!("{} Failed to uninstall {}: {}", "✗".red(), tool.name, e);
                     }
                 }
@@ -746,9 +790,30 @@ async fn main() -> Result<()> {
     match cli.command {
         None | Some(Commands::List) => {
             // Show installed versions
-            let tools = get_all_versions().await;
-            for tool in &tools {
-                print_version(tool, false);
+            let mut tools = get_all_versions().await;
+            check_latest_versions(&mut tools).await;
+            
+            // Separate installed and not installed
+            let installed: Vec<_> = tools.iter().filter(|t| t.installed.is_some()).collect();
+            let not_installed: Vec<_> = tools.iter().filter(|t| t.installed.is_none()).collect();
+            
+            // Show installed tools first
+            if !installed.is_empty() {
+                println!("{}", "Installed:".bright_green().bold());
+                for tool in &installed {
+                    print_version(tool, true);
+                }
+            }
+            
+            // Show not installed tools
+            if !not_installed.is_empty() {
+                if !installed.is_empty() {
+                    println!();
+                }
+                println!("{}", "Not Installed:".bright_black().bold());
+                for tool in &not_installed {
+                    print_version(tool, true);
+                }
             }
         }
         Some(Commands::Check) => {
@@ -767,8 +832,8 @@ async fn main() -> Result<()> {
         Some(Commands::Install { tool }) | Some(Commands::Add { tool }) => {
             handle_install_command(tool.as_deref()).await?;
         }
-        Some(Commands::Uninstall { tool }) | Some(Commands::Remove { tool }) => {
-            handle_uninstall_command(tool.as_deref()).await?;
+        Some(Commands::Uninstall { tool, remove_config, force }) | Some(Commands::Remove { tool, remove_config, force }) => {
+            handle_uninstall_command(tool.as_deref(), remove_config, force).await?;
         }
     }
 
