@@ -3,7 +3,7 @@ mod claude;
 mod cline;
 mod codex;
 mod copilot;
-mod cursor;
+mod cursor_agent;
 mod gemini;
 mod kilo;
 
@@ -14,17 +14,18 @@ pub use claude::{definition as claude_tool, installed_version as claude_installe
 pub use cline::{definition as cline_tool, installed_version as cline_installed_version};
 pub use codex::{definition as codex_tool, installed_version as codex_installed_version};
 pub use copilot::{definition as copilot_tool, installed_version as copilot_installed_version};
-pub use cursor::{definition as cursor_tool, installed_version as cursor_installed_version};
+pub use cursor_agent::{
+    definition as cursor_agent_tool, installed_version as cursor_agent_installed_version,
+};
 pub use gemini::{definition as gemini_tool, installed_version as gemini_installed_version};
 pub use kilo::{definition as kilo_tool, installed_version as kilo_installed_version};
 
 #[derive(Debug, Clone)]
 pub enum InstallMethod {
     Npm(String),
-    GitHub(String),
     Bootstrap(String),
     Amp(String),
-    Custom(String),
+    Brew(String),
 }
 
 #[derive(Debug, Clone)]
@@ -90,7 +91,7 @@ pub fn catalog() -> Vec<Tool> {
         claude_tool(),
         amp_tool(),
         codex_tool(),
-        cursor_tool(),
+        cursor_agent_tool(),
         copilot_tool(),
         kilo_tool(),
         gemini_tool(),
@@ -103,7 +104,7 @@ pub fn installed_versions() -> Vec<ToolVersion> {
         claude_installed_version(),
         amp_installed_version(),
         codex_installed_version(),
-        cursor_installed_version(),
+        cursor_agent_installed_version(),
         copilot_installed_version(),
         kilo_installed_version(),
         gemini_installed_version(),

@@ -25,10 +25,21 @@ async fn main() -> Result<()> {
             let installed: Vec<_> = tools.iter().filter(|t| t.installed.is_some()).collect();
             let not_installed: Vec<_> = tools.iter().filter(|t| t.installed.is_none()).collect();
 
+            let all_up_to_date = installed.iter().all(|t| {
+                if let (Some(installed_ver), Some(latest_ver)) = (&t.installed, &t.latest) {
+                    installed_ver.contains(latest_ver) || latest_ver.contains(installed_ver)
+                } else {
+                    true
+                }
+            });
+
             if !installed.is_empty() {
                 println!("{}", "Installed:".bright_green().bold());
                 for tool in &installed {
                     print_version(tool, true);
+                }
+                if all_up_to_date {
+                    println!("\n{}", "✓ All tools are up to date".green());
                 }
             }
 

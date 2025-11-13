@@ -2,8 +2,8 @@ use super::{InstallMethod, Tool, ToolVersion, command_output};
 
 pub fn definition() -> Tool {
     Tool::new(
-        "Cline",
-        InstallMethod::GitHub("cline/cline".to_string()),
+        "Cline CLI",
+        InstallMethod::Npm("cline".to_string()),
         vec!["cline".to_string(), "version".to_string()],
     )
     .with_binary_name("cline")
@@ -25,5 +25,5 @@ pub fn installed_version() -> ToolVersion {
                 })
             })
     });
-    ToolVersion::new("Cline").with_installed(installed)
+    ToolVersion::new("Cline CLI").with_installed(installed)
 }

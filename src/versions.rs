@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, process::Command};
 
 use colored::*;
 use futures::future::join_all;
 use serde::Deserialize;
+use tokio::task;
 
 use crate::tools::ToolVersion;
 
@@ -14,6 +15,21 @@ struct NpmPackageInfo {
 #[derive(Deserialize)]
 struct GitHubRelease {
     tag_name: String,
+}
+
+#[derive(Deserialize)]
+struct BrewInfo {
+    formulae: Vec<BrewFormula>,
+}
+
+#[derive(Deserialize)]
+struct BrewFormula {
+    versions: BrewVersions,
+}
+
+#[derive(Deserialize)]
+struct BrewVersions {
+    stable: Option<String>,
 }
 
 async fn get_npm_latest(package: &str) -> Option<String> {
@@ -36,6 +52,24 @@ async fn get_github_latest(repo: &str) -> Option<String> {
     Some(release.tag_name)
 }
 
+async fn get_brew_latest(formula: &str) -> Option<String> {
+    let formula = formula.to_string();
+    task::spawn_blocking(move || {
+        let output = Command::new("brew")
+            .args(["info", "--json=v2", &formula])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let info: BrewInfo = serde_json::from_slice(&output.stdout).ok()?;
+        info.formulae.into_iter().next()?.versions.stable
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
 pub async fn check_latest_versions(tools: &mut [ToolVersion]) {
     println!("{}", "Checking latest versions...".cyan());
 
@@ -44,11 +78,17 @@ pub async fn check_latest_versions(tools: &mut [ToolVersion]) {
             "Claude Code",
             tokio::spawn(get_github_latest("anthropics/anthropic-quickstarts")),
         ),
-        ("Codex", tokio::spawn(get_npm_latest("@openai/codex"))),
-        ("Copilot", tokio::spawn(get_npm_latest("@github/copilot"))),
-        ("Gemini", tokio::spawn(get_npm_latest("@google/gemini-cli"))),
-        ("Cline", tokio::spawn(get_github_latest("cline/cline"))),
-        ("Kilo", tokio::spawn(get_github_latest("Kilo-Org/kilocode"))),
+        ("Codex CLI", tokio::spawn(get_brew_latest("codex"))),
+        (
+            "Copilot CLI",
+            tokio::spawn(get_npm_latest("@github/copilot")),
+        ),
+        ("Gemini CLI", tokio::spawn(get_brew_latest("gemini-cli"))),
+        ("Cline CLI", tokio::spawn(get_npm_latest("cline"))),
+        (
+            "Kilo Code CLI",
+            tokio::spawn(get_npm_latest("@kilocode/cli")),
+        ),
     ];
 
     let resolved = join_all(
@@ -74,7 +114,7 @@ pub fn print_version(tool: &ToolVersion, check_latest: bool) {
             if check_latest {
                 if let Some(latest) = &tool.latest {
                     if version.contains(latest) || latest.contains(version) {
-                        format!("{} ✓", version_str.green())
+                        version_str.green().to_string()
                     } else {
                         format!(
                             "{} → {} available",
@@ -102,5 +142,5 @@ pub fn print_version(tool: &ToolVersion, check_latest: bool) {
         }
     };
 
-    println!("{:12} {}", format!("{}:", tool.name).bold(), status);
+    println!("{:15} {}", format!("{}:", tool.name).bold(), status);
 }

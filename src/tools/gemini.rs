@@ -2,8 +2,8 @@ use super::{InstallMethod, Tool, ToolVersion, command_output};
 
 pub fn definition() -> Tool {
     Tool::new(
-        "Gemini",
-        InstallMethod::Npm("@google/gemini-cli".to_string()),
+        "Gemini CLI",
+        InstallMethod::Brew("gemini-cli".to_string()),
         vec!["gemini".to_string(), "--version".to_string()],
     )
     .with_binary_name("gemini")
@@ -11,5 +11,5 @@ pub fn definition() -> Tool {
 
 pub fn installed_version() -> ToolVersion {
     let installed = command_output("gemini", &["--version"]);
-    ToolVersion::new("Gemini").with_installed(installed)
+    ToolVersion::new("Gemini CLI").with_installed(installed)
 }

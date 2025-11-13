@@ -10,7 +10,10 @@ pub fn definition() -> Tool {
 }
 
 pub fn installed_version() -> ToolVersion {
-    let installed =
-        command_output("amp", &["--version"]).and_then(|s| s.lines().next().map(|l| l.to_string()));
+    let installed = command_output("amp", &["--version"]).and_then(|s| {
+        s.lines()
+            .next()
+            .map(|l| l.split(" (released").next().unwrap_or(l).to_string())
+    });
     ToolVersion::new("Amp").with_installed(installed)
 }

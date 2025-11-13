@@ -49,10 +49,9 @@ pub async fn handle_install_command(tool_name: Option<&str>) -> Result<()> {
                 t.name,
                 match &t.install_method {
                     InstallMethod::Npm(pkg) => format!("npm: {}", pkg),
-                    InstallMethod::GitHub(repo) => format!("github: {}", repo),
                     InstallMethod::Bootstrap(_) => "bootstrap".to_string(),
+                    InstallMethod::Brew(formula) => format!("brew: {}", formula),
                     InstallMethod::Amp(_) => "amp installer".to_string(),
-                    InstallMethod::Custom(_) => "custom".to_string(),
                 }
             )
         })
@@ -201,6 +200,18 @@ async fn install_tool(tool: &Tool) -> Result<()> {
             run_install_script(url, "amp_install.sh", "Amp installer").await?;
             println!("{} {} installed successfully!", "✓".green(), tool.name);
         }
+        InstallMethod::Brew(formula) => {
+            let status = Command::new("brew")
+                .args(["install", formula])
+                .status()
+                .context("Failed to run brew install")?;
+
+            if status.success() {
+                println!("{} {} installed successfully!", "✓".green(), tool.name);
+            } else {
+                anyhow::bail!("brew install failed for {}", tool.name);
+            }
+        }
         InstallMethod::Npm(package) => {
             let status = Command::new("npm")
                 .args(&["install", "-g", package])
@@ -212,87 +223,6 @@ async fn install_tool(tool: &Tool) -> Result<()> {
             } else {
                 anyhow::bail!("npm install failed for {}", tool.name);
             }
-        }
-        InstallMethod::GitHub(repo) => {
-            println!("{} Fetching latest release from GitHub...", "→".cyan());
-
-            let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
-            let client = reqwest::Client::new();
-            let response = client
-                .get(&url)
-                .header("User-Agent", "ai-cli-apps")
-                .send()
-                .await
-                .context("Failed to fetch GitHub release")?;
-
-            let release: serde_json::Value = response.json().await?;
-            let tag_name = release["tag_name"]
-                .as_str()
-                .context("No tag_name in release")?;
-
-            let assets = release["assets"]
-                .as_array()
-                .context("No assets in release")?;
-
-            let os_keywords = ["darwin", "macos", "mac", "universal"];
-            let binary_asset = assets.iter().find(|asset| {
-                if let Some(name) = asset["name"].as_str() {
-                    let name_lower = name.to_lowercase();
-                    os_keywords
-                        .iter()
-                        .any(|keyword| name_lower.contains(keyword))
-                        && !name_lower.ends_with(".sha256")
-                        && !name_lower.ends_with(".txt")
-                } else {
-                    false
-                }
-            });
-
-            if let Some(asset) = binary_asset {
-                let download_url = asset["browser_download_url"]
-                    .as_str()
-                    .context("No download URL")?;
-                let asset_name = asset["name"].as_str().unwrap_or("binary");
-
-                println!("{} Downloading {}...", "→".cyan(), asset_name);
-
-                let binary_data = reqwest::get(download_url).await?.bytes().await?;
-
-                let install_dir = Path::new("/usr/local/bin");
-                let binary_name = tool
-                    .binary_name
-                    .as_deref()
-                    .unwrap_or_else(|| tool.name.as_str());
-                let install_path = install_dir.join(binary_name);
-
-                fs::write(&install_path, &binary_data).context("Failed to write binary")?;
-
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let mut perms = fs::metadata(&install_path)?.permissions();
-                    perms.set_mode(0o755);
-                    fs::set_permissions(&install_path, perms)?;
-                }
-
-                println!(
-                    "{} {} installed successfully to {}!",
-                    "✓".green(),
-                    tool.name,
-                    install_path.display()
-                );
-            } else {
-                println!("{} No suitable binary found for your platform.", "✗".red());
-                println!(
-                    "Please visit https://github.com/{}/releases/tag/{}",
-                    repo, tag_name
-                );
-                anyhow::bail!("No binary available for platform");
-            }
-        }
-        InstallMethod::Custom(message) => {
-            println!("{}", message.yellow());
-            anyhow::bail!("Custom installation required");
         }
     }
 
@@ -483,32 +413,17 @@ async fn uninstall_tool(tool: &Tool, remove_config: bool, force: bool) -> Result
                 anyhow::bail!("npm uninstall failed for {}", tool.name);
             }
         }
-        InstallMethod::GitHub(_) => {
-            let binary_name = tool
-                .binary_name
-                .as_deref()
-                .unwrap_or_else(|| tool.name.as_str());
-            let install_path = Path::new("/usr/local/bin").join(binary_name);
+        InstallMethod::Brew(formula) => {
+            let status = Command::new("brew")
+                .args(["uninstall", formula])
+                .status()
+                .context("Failed to run brew uninstall")?;
 
-            if install_path.exists() {
-                fs::remove_file(&install_path).context("Failed to remove binary")?;
+            if status.success() {
                 println!("{} {} uninstalled successfully!", "✓".green(), tool.name);
             } else {
-                println!(
-                    "{} {} binary not found at {}",
-                    "!".yellow(),
-                    tool.name,
-                    install_path.display()
-                );
+                anyhow::bail!("brew uninstall failed for {}", tool.name);
             }
-        }
-        InstallMethod::Custom(_) => {
-            println!(
-                "{} {} requires manual uninstallation",
-                "!".yellow(),
-                tool.name
-            );
-            println!("Please remove it manually from your system");
         }
     }
 
@@ -533,7 +448,61 @@ async fn upgrade_tool(tool: &Tool) -> Result<()> {
                 anyhow::bail!("`amp update` failed - see output above for details");
             }
         }
-        _ => anyhow::bail!("Upgrade not implemented for {}", tool.name),
+        InstallMethod::Brew(formula) => {
+            println!("{} Running `brew upgrade {}`...", "→".cyan(), formula);
+            let status = Command::new("brew")
+                .args(["upgrade", formula])
+                .status()
+                .context("Failed to run brew upgrade")?;
+
+            if status.success() {
+                println!("{} {} upgraded successfully!", "✓".green(), tool.name);
+                Ok(())
+            } else {
+                anyhow::bail!("brew upgrade failed for {}", tool.name);
+            }
+        }
+        InstallMethod::Npm(package) => {
+            println!("{} Running `npm install -g {}`...", "→".cyan(), package);
+            let status = Command::new("npm")
+                .args(["install", "-g"])
+                .arg(package)
+                .status()
+                .context("Failed to run npm install")?;
+
+            if status.success() {
+                println!("{} {} upgraded successfully!", "✓".green(), tool.name);
+                Ok(())
+            } else {
+                anyhow::bail!("npm install failed for {}", tool.name);
+            }
+        }
+        InstallMethod::Bootstrap(url) => {
+            let is_cursor_agent = tool
+                .binary_name
+                .as_deref()
+                .map(|name| name == "cursor-agent")
+                .unwrap_or(false);
+
+            if is_cursor_agent {
+                println!("{} Running `cursor-agent upgrade`...", "→".cyan());
+                let status = Command::new("cursor-agent")
+                    .arg("upgrade")
+                    .status()
+                    .context("Failed to run cursor-agent upgrade")?;
+
+                if status.success() {
+                    println!("{} {} upgraded successfully!", "✓".green(), tool.name);
+                    Ok(())
+                } else {
+                    anyhow::bail!("cursor-agent upgrade failed");
+                }
+            } else {
+                run_install_script(url, "bootstrap_upgrade.sh", "bootstrap script").await?;
+                println!("{} {} upgraded successfully!", "✓".green(), tool.name);
+                Ok(())
+            }
+        }
     }
 }
 
