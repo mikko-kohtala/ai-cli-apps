@@ -118,6 +118,7 @@ pub async fn check_latest_versions(tools: &mut [ToolVersion]) {
             "Claude Code",
             tokio::spawn(get_github_latest("anthropics/anthropic-quickstarts")),
         ),
+        ("Amp", tokio::spawn(get_npm_latest("@sourcegraph/amp"))),
         ("Codex CLI", tokio::spawn(get_brew_latest("codex"))),
         (
             "Copilot CLI",
