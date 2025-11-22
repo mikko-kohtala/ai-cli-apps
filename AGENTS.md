@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-ai-cli-apps is a single binary crate; all CLI wiring, tool metadata, and async workflows live in `src/main.rs`. Dependencies live in `Cargo.toml` (edition 2024). Use the `Makefile` for repeatable builds, `README.md` for CLI examples, and `TODO.md` for roadmap items. Build outputs belong in `target/`; never commit that directory or downloaded binaries.
+ai-cli-apps is a single binary crate. Structure: `src/main.rs` (entry), `src/cli.rs` (arg parsing), `src/actions.rs` (command logic), `src/versions.rs` (version checking/display), `src/tools/*.rs` (per-tool definitions). Dependencies in `Cargo.toml` (edition 2024). Use `Makefile` for builds, `README.md` for examples, `docs/todo.md` for roadmap. Build outputs in `target/`; never commit binaries.
 
 ## Build, Test, and Development Commands
 
