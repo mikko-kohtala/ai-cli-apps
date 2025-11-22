@@ -2,6 +2,7 @@ use std::{collections::HashMap, process::Command};
 
 use colored::*;
 use futures::future::join_all;
+use indicatif::{ProgressBar, ProgressStyle};
 use serde::Deserialize;
 use tokio::task;
 
@@ -121,17 +122,23 @@ async fn get_brew_latest(formula: &str) -> Option<String> {
 }
 
 pub async fn check_latest_versions(tools: &mut [ToolVersion]) {
-    println!("{}", "Checking latest versions...".cyan());
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.cyan} {msg}")
+            .unwrap()
+    );
+    spinner.enable_steady_tick(std::time::Duration::from_millis(80));
 
     // Update Homebrew package database before checking versions
+    spinner.set_message("Updating Homebrew...");
     task::spawn_blocking(|| {
-        if update_brew() {
-            println!("{}", "Updated Homebrew package database".dimmed());
-        }
+        update_brew();
     })
     .await
     .ok();
 
+    spinner.set_message("Fetching versions...");
     let sources = vec![
         (
             "Claude Code",
@@ -167,6 +174,8 @@ pub async fn check_latest_versions(tools: &mut [ToolVersion]) {
             tool.latest = latest.clone();
         }
     }
+
+    spinner.finish_and_clear();
 }
 
 pub fn print_version(tool: &ToolVersion, check_latest: bool, label_width: usize, id_width: usize) {

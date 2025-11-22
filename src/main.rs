@@ -8,6 +8,7 @@ use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Commands};
 use colored::*;
+use indicatif::{ProgressBar, ProgressStyle};
 use tools::installed_versions;
 use versions::{check_latest_versions, print_version};
 
@@ -19,7 +20,18 @@ async fn main() -> Result<()> {
 
     match cli.command {
         None | Some(Commands::List) => {
+            let spinner = ProgressBar::new_spinner();
+            spinner.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.cyan} {msg}")
+                    .unwrap()
+            );
+            spinner.enable_steady_tick(std::time::Duration::from_millis(80));
+            spinner.set_message("Checking installed tools...");
+
             let mut tools = installed_versions();
+            spinner.finish_and_clear();
+
             check_latest_versions(&mut tools).await;
 
             let label_width = tools.iter().map(|t| t.name.len()).max().unwrap_or(0);
@@ -60,7 +72,18 @@ async fn main() -> Result<()> {
             }
         }
         Some(Commands::Check) => {
+            let spinner = ProgressBar::new_spinner();
+            spinner.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.cyan} {msg}")
+                    .unwrap()
+            );
+            spinner.enable_steady_tick(std::time::Duration::from_millis(80));
+            spinner.set_message("Checking installed tools...");
+
             let mut tools = installed_versions();
+            spinner.finish_and_clear();
+
             check_latest_versions(&mut tools).await;
             let label_width = tools.iter().map(|t| t.name.len()).max().unwrap_or(0);
             let id_width = tools
